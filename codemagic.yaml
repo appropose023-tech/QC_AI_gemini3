@@ -1,148 +1,58 @@
 workflows:
-  build_pcb_inspector:
-    name: Build PCB Inspector
+  build_app:
+    name: Build Flutter APK from partial repo
     max_build_duration: 60
     environment:
       flutter: stable
       vars:
-        APP_NAME: "pcb_inspector"
-
+        APP_NAME: pcb_inspector
     scripts:
-      - name: Create Flutter project
+      # 1. Create a new flutter project
+      - name: Create fresh Flutter structure
         script: |
           flutter create $APP_NAME
+          rm -rf $APP_NAME/lib/*
+          cp -R lib/* $APP_NAME/lib/
 
-      - name: Replace main.dart with custom code
+      # 2. Copy your pubspec override
+      - name: Create pubspec.yaml
         script: |
-          cd $APP_NAME/lib
-          rm -f main.dart
-          cat << 'EOF' > main.dart
-import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:camera/camera.dart';
-import 'package:path_provider/path_provider.dart';
-import 'api_service.dart';
+          cat > $APP_NAME/pubspec.yaml << "EOF"
+          name: pcb_inspector
+          description: PCB inspector camera app
+          publish_to: "none"
+          environment:
+            sdk: ">=3.1.0 <4.0.0"
+          dependencies:
+            flutter:
+              sdk: flutter
+            camera: ^0.11.0
+            http: ^1.1.0
+            path_provider: ^2.1.2
+          dev_dependencies:
+            flutter_test:
+              sdk: flutter
+          flutter:
+            uses-material-design: true
+          EOF
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final cameras = await availableCameras();
-  final firstCamera = cameras.first;
-
-  runApp(MaterialApp(
-    home: CaptureScreen(camera: firstCamera),
-  ));
-}
-
-class CaptureScreen extends StatefulWidget {
-  final CameraDescription camera;
-  CaptureScreen({required this.camera});
-
-  @override
-  _CaptureScreenState createState() => _CaptureScreenState();
-}
-
-class _CaptureScreenState extends State<CaptureScreen> {
-  CameraController? controller;
-  bool processing = false;
-  XFile? processedImage;
-
-  @override
-  void initState() {
-    super.initState();
-    controller = CameraController(widget.camera, ResolutionPreset.max);
-    controller!.initialize().then((_) {
-      if (!mounted) return;
-      setState(() {});
-    });
-  }
-
-  Future<void> captureAndUpload() async {
-    if (controller == null || !controller!.value.isInitialized) return;
-
-    setState(() => processing = true);
-
-    final image = await controller!.takePicture();
-    final annotated = await ApiService.processImage(File(image.path));
-
-    setState(() {
-      processedImage = XFile(annotated.path);
-      processing = false;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (controller == null || !controller!.value.isInitialized) {
-      return Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    return Scaffold(
-      appBar: AppBar(title: Text("PCB Inspector")),
-      body: Column(
-        children: [
-          Expanded(child: CameraPreview(controller!)),
-          if (processedImage != null)
-            Image.file(File(processedImage!.path), height: 200),
-          SizedBox(height: 10),
-          ElevatedButton(
-            onPressed: processing ? null : captureAndUpload,
-            child: processing
-                ? Text("Processing…")
-                : Text("Capture & Inspect"),
-          ),
-        ],
-      ),
-    );
-  }
-}
-EOF
-
-      - name: Add API service file
-        script: |
-          cd $APP_NAME/lib
-          cat << 'EOF' > api_service.dart
-import 'dart:io';
-import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-
-class ApiService {
-  static Future<File> processImage(File file) async {
-    final url = Uri.parse("YOUR_SERVER_URL/process");
-
-    var req = http.MultipartRequest("POST", url);
-    req.files.add(await http.MultipartFile.fromPath("file", file.path));
-
-    final res = await req.send();
-    final bytes = await res.stream.toBytes();
-
-    final dir = await getTemporaryDirectory();
-    final annotated = File("${dir.path}/annotated.png");
-    await annotated.writeAsBytes(bytes);
-
-    return annotated;
-  }
-}
-EOF
-
-      - name: Add dependencies
+      # 3. Move into project folder
+      - name: Enter app folder
         script: |
           cd $APP_NAME
-          flutter pub add camera
-          flutter pub add path_provider
-          flutter pub add http
+          flutter pub get
 
+      # 4. Build Release APK
       - name: Build APK
         script: |
           cd $APP_NAME
           flutter build apk --release
 
-      - name: Display APK files
-        script: |
-          echo "============= APKs Generated ============="
-          find $APP_NAME/build/app/outputs -name "*.apk" -print
-          echo "=========================================="
-
     artifacts:
-      - $APP_NAME/build/app/outputs/flutter-apk/**/*.apk
+      - "$APP_NAME/build/app/outputs/flutter-apk/app-release.apk"
+
+    publishing:
+      scripts:
+        - name: Print APK location
+          script: |
+            echo "APK created at: $APP_NAME/build/app/outputs/flutter-apk/app-release.apk"
