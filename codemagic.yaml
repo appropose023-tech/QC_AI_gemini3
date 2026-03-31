@@ -1,18 +1,163 @@
 workflows:
-  build_android:
-    name: Build PCB Inspector Android APK
-    max_build_duration: 60
+  create_and_build_flutter:
+    name: Create Flutter Project & Build APK
     environment:
       flutter: stable
-      vars:
-        PACKAGE_NAME: "com.pcb.inspector"
-
     scripts:
-      - name: Get Flutter packages
-        script: flutter pub get
+      - name: Create project folder
+        script: |
+          mkdir my_app
+          cd my_app
+
+          echo "Creating Flutter directory structure..."
+          mkdir -p lib assets android ios web test
+
+      - name: Generate pubspec.yaml
+        script: |
+          cd my_app
+          cat <<EOF > pubspec.yaml
+          name: dynamic_camera_app
+          description: Auto-generated Flutter app
+          publish_to: "none"
+
+          environment:
+            sdk: ">=3.3.0 <4.0.0"
+
+          dependencies:
+            flutter:
+              sdk: flutter
+            camera: ^0.11.0
+            path_provider: ^2.1.2
+            gallery_saver: ^2.3.2
+            image: ^4.2.0
+
+          flutter:
+            uses-material-design: true
+            assets:
+              - assets/
+          EOF
+
+      - name: Create main.dart (camera + gallery save + flexible resolution)
+        script: |
+          cd my_app/lib
+
+          cat <<'EOF' > main.dart
+          import 'dart:io';
+          import 'package:camera/camera.dart';
+          import 'package:flutter/material.dart';
+          import 'package:gallery_saver/gallery_saver.dart';
+          import 'package:path_provider/path_provider.dart';
+
+          Future<void> main() async {
+            WidgetsFlutterBinding.ensureInitialized();
+            final cameras = await availableCameras();
+            runApp(MyApp(cameras: cameras));
+          }
+
+          class MyApp extends StatelessWidget {
+            final List<CameraDescription> cameras;
+            const MyApp({super.key, required this.cameras});
+
+            @override
+            Widget build(BuildContext context) {
+              return MaterialApp(
+                home: CameraPage(cameras: cameras),
+              );
+            }
+          }
+
+          class CameraPage extends StatefulWidget {
+            final List<CameraDescription> cameras;
+            const CameraPage({super.key, required this.cameras});
+
+            @override
+            State<CameraPage> createState() => _CameraPageState();
+          }
+
+          class _CameraPageState extends State<CameraPage> {
+            CameraController? controller;
+            ResolutionPreset currentPreset = ResolutionPreset.max;
+
+            @override
+            void initState() {
+              super.initState();
+              initCamera();
+            }
+
+            Future<void> initCamera() async {
+              controller = CameraController(
+                widget.cameras.first,
+                currentPreset,
+                enableAudio: false,
+              );
+              await controller!.initialize();
+              setState(() {});
+            }
+
+            Future<void> capture() async {
+              if (!controller!.value.isInitialized) return;
+
+              final file = await controller!.takePicture();
+
+              final directory = await getTemporaryDirectory();
+              final newPath =
+                  "${directory.path}/captured_${DateTime.now().millisecondsSinceEpoch}.jpg";
+
+              File newFile = await File(file.path).copy(newPath);
+
+              await GallerySaver.saveImage(newFile.path);
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text("Saved to gallery")),
+              );
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              if (controller == null || !controller!.value.isInitialized) {
+                return Scaffold(body: Center(child: CircularProgressIndicator()));
+              }
+
+              return Scaffold(
+                appBar: AppBar(
+                  title: Text("Camera + Gallery Save + Resolution"),
+                ),
+                body: Column(
+                  children: [
+                    Expanded(child: CameraPreview(controller!)),
+                    DropdownButton<ResolutionPreset>(
+                      value: currentPreset,
+                      items: ResolutionPreset.values
+                          .map((preset) => DropdownMenuItem(
+                                value: preset,
+                                child: Text(preset.toString()),
+                              ))
+                          .toList(),
+                      onChanged: (value) async {
+                        currentPreset = value!;
+                        await initCamera();
+                      },
+                    ),
+                    ElevatedButton(
+                      onPressed: capture,
+                      child: Text("Capture"),
+                    )
+                  ],
+                ),
+              );
+            }
+          }
+          EOF
+
+      - name: Run flutter pub get
+        script: |
+          cd my_app
+          flutter pub get
 
       - name: Build APK
-        script: flutter build apk --release
+        script: |
+          cd my_app
+          flutter build apk --release
 
     artifacts:
-      - build/app/outputs/flutter-apk/app-release.apk
+      - my_app/build/app/outputs/flutter-apk/app-release.apk
