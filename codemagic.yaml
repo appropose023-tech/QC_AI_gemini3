@@ -1,23 +1,21 @@
 workflows:
-  create_and_build_flutter:
-    name: Create Flutter Project & Build APK
+  auto_create_flutter_build:
+    name: Auto-Create Flutter Project & Build APK
     environment:
       flutter: stable
+
     scripts:
-      - name: Create project folder
+      - name: Create Flutter App
         script: |
-          mkdir my_app
-          cd my_app
+          flutter create my_app
+          echo "Flutter project created successfully."
 
-          echo "Creating Flutter directory structure..."
-          mkdir -p lib assets android ios web test
-
-      - name: Generate pubspec.yaml
+      - name: Replace pubspec.yaml with required dependencies
         script: |
           cd my_app
           cat <<EOF > pubspec.yaml
           name: dynamic_camera_app
-          description: Auto-generated Flutter app
+          description: Auto-generated Flutter camera app
           publish_to: "none"
 
           environment:
@@ -27,24 +25,27 @@ workflows:
             flutter:
               sdk: flutter
             camera: ^0.11.0
-            path_provider: ^2.1.2
             gallery_saver: ^2.3.2
+            path_provider: ^2.1.2
             image: ^4.2.0
+
+          dev_dependencies:
+            flutter_test:
+              sdk: flutter
 
           flutter:
             uses-material-design: true
-            assets:
-              - assets/
           EOF
 
-      - name: Create main.dart (camera + gallery save + flexible resolution)
+      - name: Inject main.dart with camera + gallery save + flexible resolution
         script: |
           cd my_app/lib
+          rm -f main.dart
 
           cat <<'EOF' > main.dart
           import 'dart:io';
-          import 'package:camera/camera.dart';
           import 'package:flutter/material.dart';
+          import 'package:camera/camera.dart';
           import 'package:gallery_saver/gallery_saver.dart';
           import 'package:path_provider/path_provider.dart';
 
@@ -76,7 +77,7 @@ workflows:
 
           class _CameraPageState extends State<CameraPage> {
             CameraController? controller;
-            ResolutionPreset currentPreset = ResolutionPreset.max;
+            ResolutionPreset preset = ResolutionPreset.max;
 
             @override
             void initState() {
@@ -85,27 +86,18 @@ workflows:
             }
 
             Future<void> initCamera() async {
-              controller = CameraController(
-                widget.cameras.first,
-                currentPreset,
-                enableAudio: false,
-              );
+              controller = CameraController(widget.cameras.first, preset, enableAudio: false);
               await controller!.initialize();
               setState(() {});
             }
 
             Future<void> capture() async {
-              if (!controller!.value.isInitialized) return;
-
               final file = await controller!.takePicture();
+              final temp = await getTemporaryDirectory();
+              final newPath = "${temp.path}/img_${DateTime.now().millisecondsSinceEpoch}.jpg";
 
-              final directory = await getTemporaryDirectory();
-              final newPath =
-                  "${directory.path}/captured_${DateTime.now().millisecondsSinceEpoch}.jpg";
-
-              File newFile = await File(file.path).copy(newPath);
-
-              await GallerySaver.saveImage(newFile.path);
+              final saved = await File(file.path).copy(newPath);
+              await GallerySaver.saveImage(saved.path);
 
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text("Saved to gallery")),
@@ -114,34 +106,32 @@ workflows:
 
             @override
             Widget build(BuildContext context) {
-              if (controller == null || !controller!.value.isInitialized) {
+              if (!(controller?.value.isInitialized ?? false)) {
                 return Scaffold(body: Center(child: CircularProgressIndicator()));
               }
 
               return Scaffold(
-                appBar: AppBar(
-                  title: Text("Camera + Gallery Save + Resolution"),
-                ),
+                appBar: AppBar(title: Text("Camera Test App")),
                 body: Column(
                   children: [
                     Expanded(child: CameraPreview(controller!)),
                     DropdownButton<ResolutionPreset>(
-                      value: currentPreset,
+                      value: preset,
                       items: ResolutionPreset.values
-                          .map((preset) => DropdownMenuItem(
-                                value: preset,
-                                child: Text(preset.toString()),
+                          .map((e) => DropdownMenuItem(
+                                value: e,
+                                child: Text(e.toString()),
                               ))
                           .toList(),
-                      onChanged: (value) async {
-                        currentPreset = value!;
+                      onChanged: (v) async {
+                        preset = v!;
                         await initCamera();
                       },
                     ),
                     ElevatedButton(
                       onPressed: capture,
                       child: Text("Capture"),
-                    )
+                    ),
                   ],
                 ),
               );
@@ -149,7 +139,7 @@ workflows:
           }
           EOF
 
-      - name: Run flutter pub get
+      - name: Install dependencies
         script: |
           cd my_app
           flutter pub get
@@ -158,6 +148,7 @@ workflows:
         script: |
           cd my_app
           flutter build apk --release
+          echo "APK build completed."
 
     artifacts:
       - my_app/build/app/outputs/flutter-apk/app-release.apk
