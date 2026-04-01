@@ -1,48 +1,59 @@
 workflows:
-  build_apk:
-    name: Build PCB Inspector APK
-    max_build_duration: 60
-    environment:
-      flutter: stable
-
+  build_app:
+    name: Build Cross-Platform Flutter App
     scripts:
-      - name: Backup repo's lib folder
+      # --------------------------------------------------------
+      # 1. Backup repo-provided lib/ and android_overrides/
+      # --------------------------------------------------------
+      - name: Backup custom code
         script: |
-          echo "Backing up lib/"
-          mkdir lib_backup
-          cp -R lib/* lib_backup/
+          echo "Backing up custom lib and android_overrides..."
+          mkdir -p repo_backup/lib
+          mkdir -p repo_backup/android_overrides
 
-      - name: Backup repo's android_overrides folder
-        script: |
-          echo "Backing up android_overrides/"
-          mkdir android_overrides_backup
-          cp -R android_overrides/* android_overrides_backup/
+          cp -R lib/* repo_backup/lib/ 2>/dev/null || true
+          cp -R android_overrides/* repo_backup/android_overrides/ 2>/dev/null || true
 
-      - name: Create full Flutter project structure
+      # --------------------------------------------------------
+      # 2. Create FULL Flutter project (all platforms)
+      # --------------------------------------------------------
+      - name: Create fresh Flutter skeleton with all platforms
         script: |
-          echo "Creating Flutter project..."
-          flutter create --platforms=android .
+          echo "Creating Flutter project with ALL platforms..."
+          flutter create --platforms=android,ios,web,windows,macos,linux pcb_app
 
-      - name: Restore your lib into Flutter project
-        script: |
-          echo "Restoring lib/"
+          cd pcb_app
+          
+          # Remove auto-generated lib
           rm -rf lib/*
-          cp -R lib_backup/* lib/
 
-      - name: Inject Android overrides
+      # --------------------------------------------------------
+      # 3. Restore your custom lib/
+      # --------------------------------------------------------
+      - name: Restore lib folder
         script: |
-          echo "Injecting AndroidManifest + network_security_config"
-          mkdir -p android/app/src/main/res/xml
-          cp android_overrides_backup/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
-          cp android_overrides_backup/network_security_config.xml android/app/src/main/res/xml/network_security_config.xml
+          echo "Restoring custom lib/"
+          cp -R ../repo_backup/lib/* pcb_app/lib/ 2>/dev/null || true
 
-      - name: Get Flutter dependencies
+      # --------------------------------------------------------
+      # 4. Restore android_overrides into exact matching locations
+      # --------------------------------------------------------
+      - name: Restore Android overrides (if present)
         script: |
-          flutter pub get
+          echo "Restoring android overrides..."
 
+          # Copy ARM directory structure but only overwrite what's present
+          # This ensures NO assumptions about file names (manifest only? XML only? etc.)
+          
+          rsync -av \
+            ../repo_backup/android_overrides/ \
+            pcb_app/android/app/src/main/ \
+            --ignore-missing-args || true
+
+      # --------------------------------------------------------
+      # 5. Build APK
+      # --------------------------------------------------------
       - name: Build Release APK
         script: |
+          cd pcb_app
           flutter build apk --release
-
-    artifacts:
-      - build/app/outputs/flutter-apk/app-release.apk
