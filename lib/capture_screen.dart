@@ -1,7 +1,7 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import 'package:path_provider/path_provider.dart';
 import 'api_service.dart';
 import 'result_screen.dart';
 
@@ -14,49 +14,64 @@ class CaptureScreen extends StatefulWidget {
 
 class _CaptureScreenState extends State<CaptureScreen> {
   CameraController? controller;
-  bool initialized = false;
+  bool loading = false;
 
   @override
   void initState() {
     super.initState();
-    initCam();
+    initCamera();
   }
 
-  Future<void> initCam() async {
+  Future<void> initCamera() async {
     final cameras = await availableCameras();
-    controller = CameraController(cameras.first, ResolutionPreset.max);
+    controller = CameraController(
+      cameras.first,
+      ResolutionPreset.max,
+      enableAudio: false,
+    );
 
     await controller!.initialize();
-    setState(() => initialized = true);
+    if (mounted) setState(() {});
   }
 
-  Future<void> captureImage() async {
-    if (!controller!.value.isInitialized) return;
+  @override
+  void dispose() {
+    controller?.dispose();
+    super.dispose();
+  }
 
-    final XFile img = await controller!.takePicture();
+  Future<void> captureAndSend() async {
+    if (controller == null || !controller!.value.isInitialized) return;
 
-    final Directory temp = await getTemporaryDirectory();
-    final File file = File("${temp.path}/pcb_input.jpg");
-    File(img.path).copySync(file.path);
+    setState(() => loading = true);
 
-    final processed = await ApiService().uploadImage(file);
+    final file = await controller!.takePicture();
 
-    if (!mounted) return;
+    try {
+      var result = await ApiService.sendImage(File(file.path));
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ResultScreen(
-          original: file,
-          processed: processed,
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ResultScreen(
+            imagePath: file.path,
+            defects: result["defects"],
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
+    }
+
+    setState(() => loading = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!initialized) {
+    if (controller == null || !controller!.value.isInitialized) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
@@ -66,18 +81,13 @@ class _CaptureScreenState extends State<CaptureScreen> {
       body: Stack(
         children: [
           CameraPreview(controller!),
-          Positioned(
-            bottom: 40,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: ElevatedButton(
-                onPressed: captureImage,
-                child: const Text("Capture PCB"),
-              ),
-            ),
-          )
+          if (loading)
+            const Center(child: CircularProgressIndicator()),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: loading ? null : captureAndSend,
+        child: const Icon(Icons.camera_alt),
       ),
     );
   }
