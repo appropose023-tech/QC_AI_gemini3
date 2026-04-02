@@ -51,7 +51,7 @@ workflows:
           fi
 
      # 4. Dependencies
-    - name: Add Required Packages
+     - name: Add Required Packages
         script: |
           echo ">>> Syncing dependencies..."
           flutter pub add http camera || true
