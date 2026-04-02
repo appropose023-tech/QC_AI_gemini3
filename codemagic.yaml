@@ -33,25 +33,23 @@ workflows:
           # If you have a custom pubspec, restore it now:
           cp /tmp/repo_files/pubspec.yaml ./pubspec.yaml || echo "Using generated pubspec"
 
-      # 3. Apply Overrides (Fixed Indentation)
-      - name: Apply Android Overrides
-        script: |
-          echo ">>> Applying Android override files..."
+      # 3. Apply ANDROID Overrides
+- name: Apply Android Overrides
+  script: |
+    echo ">>> Applying Android override files..."
 
-          # This path matches: android_overrides/app/src/main/...
-          if [ -d "/tmp/repo_files/android_overrides/app/src/main" ]; then
-            echo ">>> Merging AndroidManifest and resources..."
-            rsync -av /tmp/repo_files/android_overrides/app/src/main/ ./android/app/src/main/
-          else
-            echo "No valid android_overrides folder found!"
-          fi
+    # Only copy RESOURCES, not manifests or kotlin folder
+    if [ -d "/tmp/repo_files/android_overrides/app/src/main/res" ]; then
+      echo ">>> Copying only RES folder..."
+      rsync -av /tmp/repo_files/android_overrides/app/src/main/res/ ./android/app/src/main/res/
+    fi
 
-          # Ensure the XML directory exists before copying the config
-          mkdir -p android/app/src/main/res/xml
-          if [ -f "/tmp/repo_files/android_overrides/app/src/main/res/xml/network_security_config.xml" ]; then
-            cp /tmp/repo_files/android_overrides/app/src/main/res/xml/network_security_config.xml \
-               android/app/src/main/res/xml/network_security_config.xml
-          fi
+    # Copy network_security_config only
+    mkdir -p android/app/src/main/res/xml
+    if [ -f "/tmp/repo_files/android_overrides/app/src/main/res/xml/network_security_config.xml" ]; then
+      cp /tmp/repo_files/android_overrides/app/src/main/res/xml/network_security_config.xml \
+         android/app/src/main/res/xml/network_security_config.xml
+    fi
 
       # 4. Dependencies
       - name: Add Required Packages
