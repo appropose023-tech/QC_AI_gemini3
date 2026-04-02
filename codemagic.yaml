@@ -2,39 +2,46 @@ workflows:
   build_app:
     name: PCB App Builder
     max_build_duration: 60
-    instance_type: mac_mini_m1 # Recommended for Flutter
+    instance_type: mac_mini_m1
     scripts:
-      - name: Initialize and Sync Project
+      - name: Prepare and Scaffolding
         script: | 
-          # 1. Create the full project scaffolding in the current directory
-          # Using --force . avoids creating a subfolder like 'pcb_app'
-          flutter create --force .
-
-          # 2. Clean out the boilerplate lib folder
-          rm -rf lib
+          # 1. Safely move your repository code to a temporary location
+          echo "Backing up repository source..."
+          mkdir -p /tmp/source_backup
+          mv lib /tmp/source_backup/
           
-          # 3. Restore your actual lib from the git clone
-          # Since we didn't move it to a backup folder, it's still in the root 
-          # (unless 'flutter create' overwrote it, so we use a temp move)
-          mkdir -p /tmp/repo_lib
-          cp -R lib_backup_path/* /tmp/repo_lib/ # Logic explained below
-          
-      - name: Overwrite with Repository Code
-        script: |
-          # Codemagic clones your repo into the root. 
-          # Let's move your overrides specifically.
-          
-          echo "Applying Android overrides..."
-          # If your overrides are structured to match the 'android' folder:
+          # Move android_overrides if it exists
           if [ -d "android_overrides" ]; then
-            cp -R android_overrides/* android/
+            mv android_overrides /tmp/source_backup/
           fi
 
-      - name: Get Dependencies
+          # 2. Generate all platform folders (android, ios, webos, etc.)
+          # This creates the standard structure Codemagic needs
+          flutter create --force --project-name pcb_app .
+
+          # 3. Wipe the default 'lib' and restore your actual code
+          rm -rf lib
+          mv /tmp/source_backup/lib ./lib
+          
+          echo "✓ Scaffolding complete and lib restored."
+
+      - name: Apply Android Overrides
+        script: |
+          # 4. Restore and apply Android overrides
+          if [ -d "/tmp/source_backup/android_overrides" ]; then
+            echo "Applying Android overrides..."
+            # This copies your custom gradle/manifest files into the 'android' folder
+            cp -R /tmp/source_backup/android_overrides/* android/
+          else
+            echo "No android_overrides found, skipping..."
+          fi
+
+      - name: Install Dependencies
         script: |
           flutter pub get
 
-      - name: Build Release APK
+      - name: Build Android Release
         script: |
           flutter build apk --release
           
