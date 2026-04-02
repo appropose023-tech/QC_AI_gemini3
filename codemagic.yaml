@@ -2,65 +2,41 @@ workflows:
   build_app:
     name: PCB App Builder
     max_build_duration: 60
+    instance_type: mac_mini_m1 # Recommended for Flutter
     scripts:
-      # Step 1 — backup repo code
-      - name: Backup repo code (lib + overrides)
-        script: |
-          echo "Backing up repo code..."
-          mkdir -p repo_backup/lib
-          mkdir -p repo_backup/android_overrides
+      - name: Initialize and Sync Project
+        script: | 
+          # 1. Create the full project scaffolding in the current directory
+          # Using --force . avoids creating a subfolder like 'pcb_app'
+          flutter create --force .
 
-          # Copy lib
-          if [ -d "./lib" ]; then
-            cp -R ./lib/* repo_backup/lib/ 2>/dev/null || true
+          # 2. Clean out the boilerplate lib folder
+          rm -rf lib
+          
+          # 3. Restore your actual lib from the git clone
+          # Since we didn't move it to a backup folder, it's still in the root 
+          # (unless 'flutter create' overwrote it, so we use a temp move)
+          mkdir -p /tmp/repo_lib
+          cp -R lib_backup_path/* /tmp/repo_lib/ # Logic explained below
+          
+      - name: Overwrite with Repository Code
+        script: |
+          # Codemagic clones your repo into the root. 
+          # Let's move your overrides specifically.
+          
+          echo "Applying Android overrides..."
+          # If your overrides are structured to match the 'android' folder:
+          if [ -d "android_overrides" ]; then
+            cp -R android_overrides/* android/
           fi
 
-          # Copy android_overrides
-          if [ -d "./android_overrides" ]; then
-            cp -R ./android_overrides/* repo_backup/android_overrides/ 2>/dev/null || true
-          fi
-
-          echo "--- Repo backup contents ---"
-          ls -R repo_backup
-
-      # Step 2 — verify main.dart exists
-      - name: Verify Flutter entrypoint
+      - name: Get Dependencies
         script: |
-          if [ ! -f repo_backup/lib/main.dart ]; then
-            echo "❌ ERROR: repo_backup/lib/main.dart not found."
-            echo "Your repository must contain lib/main.dart before building."
-            exit 1
-          fi
-          echo "✓ main.dart found."
+          flutter pub get
 
-      # Step 3 — create new Flutter project
-      - name: Create new Flutter project
-        script: |
-          flutter create pcb_app
-          cd pcb_app
-
-          # Remove default lib folder
-          rm -rf lib/*
-          cd ..
-
-      # Step 4 — restore backed up lib + android overrides
-      - name: Restore code into pcb_app
-        script: |
-          echo "Restoring lib..."
-          cp -R repo_backup/lib/* pcb_app/lib/ 2>/dev/null || true
-
-          echo "Restoring android overrides..."
-          mkdir -p pcb_app/android/app/src/main/
-          cp -R repo_backup/android_overrides/* pcb_app/android/app/src/main/ 2>/dev/null || true
-
-          echo "--- Final project structure ---"
-          ls -R pcb_app
-
-      # Step 5 — Build the release APK
       - name: Build Release APK
         script: |
-          cd pcb_app
           flutter build apk --release
-
+          
     artifacts:
-      - pcb_app/build/app/outputs/flutter-apk/*.apk
+      - build/app/outputs/flutter-apk/*.apk
