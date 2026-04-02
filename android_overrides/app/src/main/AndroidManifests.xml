@@ -8,6 +8,8 @@
         android:label="PCB Inspector"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+
+        android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config">
 
         <!-- REQUIRED for camera plugin -->
@@ -15,4 +17,5 @@
         <uses-feature android:name="android.hardware.camera.autofocus" />
 
     </application>
+
 </manifest>
