@@ -1,4 +1,4 @@
-name: pcb_app
+name: pcb_aoi_inspector
 description: PCB camera inspector app
 publish_to: "none"
 
