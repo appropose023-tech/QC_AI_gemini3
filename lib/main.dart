@@ -61,7 +61,7 @@ class _PCBInspectorAppState extends State<PCBInspectorApp> {
               ),
               DropdownButton<String>(
                 value: _selectedProject,
-                items: ["Solar_Project", "UPS_Project"].map((String value) {
+                items: ["Solar_Project", "061101", "UPS_Project"].map((String value) {
                   return DropdownMenuItem<String>(value: value, child: Text(value));
                 }).toList(),
                 onChanged: (val) => setState(() => _selectedProject = val),
